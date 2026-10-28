@@ -1,0 +1,471 @@
+// Sunaidi WhatsApp platform — core data model.
+// One workspace per deployment for now; every table carries workspaceId so the
+// platform can become multi-tenant later without a rewrite. An "Event" is the
+// top-level unit (each of the 5 WATI numbers belongs to one Sunaidi event).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Workspace, users, teams
+// ---------------------------------------------------------------------------
+
+model Workspace {
+  id        String   @id @default(cuid())
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users         User[]
+  teams         Team[]
+  events        Event[]
+  phoneNumbers  PhoneNumber[]
+  contacts      Contact[]
+  conversations Conversation[]
+  messages      Message[]
+  templates     MessageTemplate[]
+  campaigns     Campaign[]
+  automations   Automation[]
+  botFlows      BotFlow[]
+  webhookEvents WebhookEvent[]
+}
+
+enum Role {
+  ADMIN
+  SUPERVISOR
+  AGENT
+}
+
+model User {
+  id          String   @id @default(cuid())
+  workspaceId String
+  // Matches the Supabase Auth user id.
+  authUserId  String   @unique
+  email       String
+  name        String?
+  role        Role     @default(AGENT)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspace      Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  teamMembers    TeamMember[]
+  assignedConvos Conversation[] @relation("ConversationAssignee")
+  sentMessages   Message[]      @relation("MessageSentByUser")
+
+  @@unique([workspaceId, email])
+  @@index([workspaceId])
+}
+
+model Team {
+  id          String   @id @default(cuid())
+  workspaceId String
+  name        String
+  createdAt   DateTime @default(now())
+
+  workspace     Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  members       TeamMember[]
+  conversations Conversation[] @relation("ConversationTeam")
+  events        Event[]
+
+  @@index([workspaceId])
+}
+
+model TeamMember {
+  teamId String
+  userId String
+
+  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([teamId, userId])
+}
+
+// ---------------------------------------------------------------------------
+// Events and phone numbers
+// ---------------------------------------------------------------------------
+
+// One Sunaidi event (e.g. Saudi Franchise Expo, Jewellery Salon). Each event
+// owns one WhatsApp number and its own inbox, templates, campaigns and reports.
+model Event {
+  id          String    @id @default(cuid())
+  workspaceId String
+  name        String
+  // Optional owning team for default routing.
+  teamId      String?
+  startsOn    DateTime?
+  endsOn      DateTime?
+  archivedAt  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  workspace   Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  team        Team?             @relation(fields: [teamId], references: [id])
+  phoneNumber PhoneNumber?
+  templates   MessageTemplate[]
+  campaigns   Campaign[]
+
+  @@index([workspaceId])
+}
+
+enum QualityRating {
+  GREEN
+  YELLOW
+  RED
+  UNKNOWN
+}
+
+model PhoneNumber {
+  id             String        @id @default(cuid())
+  workspaceId    String
+  eventId        String        @unique
+  // Meta WhatsApp Business Account id this number belongs to.
+  wabaId         String
+  // Meta phone number id used when calling the Graph API.
+  phoneNumberId  String        @unique
+  displayPhone   String
+  displayName    String?
+  qualityRating  QualityRating @default(UNKNOWN)
+  // Current per-portfolio messaging limit snapshot (e.g. 1000, 10000).
+  messagingLimit Int?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  workspace     Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  event         Event          @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  conversations Conversation[]
+  messages      Message[]
+  campaigns     Campaign[]
+
+  @@index([workspaceId])
+}
+
+// ---------------------------------------------------------------------------
+// Contacts
+// ---------------------------------------------------------------------------
+
+enum OptInStatus {
+  OPTED_IN
+  OPTED_OUT
+  UNKNOWN
+}
+
+// A person is one contact across all events; opt-in and history are tracked
+// per event through ContactOptIn and the conversations.
+model Contact {
+  id          String   @id @default(cuid())
+  workspaceId String
+  // E.164 WhatsApp phone, e.g. 9665XXXXXXXX.
+  waId        String
+  name        String?
+  // Free-form key/value attributes imported from WATI or set by automations.
+  attributes  Json     @default("{}")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspace     Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  tags          ContactTag[]
+  optIns        ContactOptIn[]
+  conversations Conversation[]
+  messages      Message[]
+
+  @@unique([workspaceId, waId])
+  @@index([workspaceId])
+}
+
+model Tag {
+  id          String       @id @default(cuid())
+  workspaceId String
+  name        String
+  contacts    ContactTag[]
+
+  @@unique([workspaceId, name])
+}
+
+model ContactTag {
+  contactId String
+  tagId     String
+
+  contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  tag     Tag     @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([contactId, tagId])
+}
+
+// Consent is per event, since a visitor may opt in to one event and not another.
+model ContactOptIn {
+  id        String      @id @default(cuid())
+  contactId String
+  eventId   String
+  status    OptInStatus @default(UNKNOWN)
+  // How consent was captured: "ctwa_ad", "registration", "import", "inbound".
+  source    String?
+  updatedAt DateTime    @updatedAt
+
+  contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@unique([contactId, eventId])
+}
+
+// ---------------------------------------------------------------------------
+// Conversations and messages
+// ---------------------------------------------------------------------------
+
+enum ConversationStatus {
+  OPEN
+  PENDING
+  RESOLVED
+}
+
+model Conversation {
+  id            String             @id @default(cuid())
+  workspaceId   String
+  contactId     String
+  phoneNumberId String
+  assigneeId    String?
+  teamId        String?
+  status        ConversationStatus @default(OPEN)
+  // Last inbound message time; the 24h customer service window is measured from this.
+  lastInboundAt DateTime?
+  lastMessageAt DateTime?
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+
+  workspace   Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  contact     Contact     @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  phoneNumber PhoneNumber @relation(fields: [phoneNumberId], references: [id])
+  assignee    User?       @relation("ConversationAssignee", fields: [assigneeId], references: [id])
+  team        Team?       @relation("ConversationTeam", fields: [teamId], references: [id])
+  messages    Message[]
+  notes       Note[]
+
+  @@unique([contactId, phoneNumberId])
+  @@index([workspaceId, status])
+  @@index([assigneeId])
+}
+
+enum MessageDirection {
+  INBOUND
+  OUTBOUND
+}
+
+enum MessageStatus {
+  QUEUED
+  SENT
+  DELIVERED
+  READ
+  FAILED
+}
+
+model Message {
+  id             String           @id @default(cuid())
+  workspaceId    String
+  conversationId String
+  contactId      String
+  phoneNumberId  String
+  direction      MessageDirection
+  // whatsapp message type: text, image, document, template, interactive, etc.
+  type           String
+  // Full message payload as stored/sent.
+  content        Json
+  status         MessageStatus    @default(QUEUED)
+  // Meta's wamid; unique so repeated webhooks are idempotent.
+  waMessageId    String?          @unique
+  errorCode      String?
+  errorMessage   String?
+  // Set for outbound messages sent by an agent (null for automated/broadcast).
+  sentByUserId   String?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  workspace    Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  contact      Contact      @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  phoneNumber  PhoneNumber  @relation(fields: [phoneNumberId], references: [id])
+  sentByUser   User?        @relation("MessageSentByUser", fields: [sentByUserId], references: [id])
+
+  @@index([conversationId, createdAt])
+  @@index([workspaceId, createdAt])
+}
+
+model Note {
+  id             String   @id @default(cuid())
+  conversationId String
+  authorId       String?
+  body           String
+  createdAt      DateTime @default(now())
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId])
+}
+
+// ---------------------------------------------------------------------------
+// Templates and campaigns
+// ---------------------------------------------------------------------------
+
+enum TemplateCategory {
+  MARKETING
+  UTILITY
+  AUTHENTICATION
+}
+
+enum TemplateStatus {
+  DRAFT
+  PENDING
+  APPROVED
+  REJECTED
+  PAUSED
+  DISABLED
+}
+
+model MessageTemplate {
+  id          String           @id @default(cuid())
+  workspaceId String
+  eventId     String?
+  name        String
+  language    String
+  category    TemplateCategory
+  // Header/body/footer/buttons structure as sent to Meta.
+  components  Json
+  status      TemplateStatus   @default(DRAFT)
+  // Meta's template id once created.
+  metaId      String?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  workspace Workspace  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  event     Event?     @relation(fields: [eventId], references: [id])
+  campaigns Campaign[]
+
+  @@unique([workspaceId, name, language])
+  @@index([workspaceId])
+}
+
+enum CampaignStatus {
+  DRAFT
+  SCHEDULED
+  SENDING
+  COMPLETED
+  CANCELLED
+}
+
+model Campaign {
+  id            String         @id @default(cuid())
+  workspaceId   String
+  eventId       String
+  phoneNumberId String
+  templateId    String
+  name          String
+  status        CampaignStatus @default(DRAFT)
+  scheduledAt   DateTime?
+  startedAt     DateTime?
+  completedAt   DateTime?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  workspace   Workspace           @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  event       Event               @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  phoneNumber PhoneNumber         @relation(fields: [phoneNumberId], references: [id])
+  template    MessageTemplate     @relation(fields: [templateId], references: [id])
+  recipients  CampaignRecipient[]
+
+  @@index([workspaceId, status])
+}
+
+model CampaignRecipient {
+  id          String        @id @default(cuid())
+  campaignId  String
+  contactId   String
+  // Per-recipient template variable values.
+  variables   Json          @default("{}")
+  status      MessageStatus @default(QUEUED)
+  waMessageId String?
+  errorCode   String?
+  sentAt      DateTime?
+
+  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@unique([campaignId, contactId])
+  @@index([campaignId, status])
+}
+
+// ---------------------------------------------------------------------------
+// Automations and chatbot flows
+// ---------------------------------------------------------------------------
+
+model Automation {
+  id          String   @id @default(cuid())
+  workspaceId String
+  eventId     String?
+  name        String
+  enabled     Boolean  @default(true)
+  // "welcome" | "out_of_office" | "keyword" | "assignment"
+  trigger     String
+  // Trigger conditions (e.g. keywords, working hours).
+  conditions  Json     @default("{}")
+  // Ordered actions (send template, assign, tag, ...).
+  actions     Json     @default("[]")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId])
+}
+
+model BotFlow {
+  id          String   @id @default(cuid())
+  workspaceId String
+  eventId     String?
+  name        String
+  enabled     Boolean  @default(false)
+  // Node graph defining the conversation flow.
+  graph       Json     @default("{}")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspace Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  sessions  BotSession[]
+
+  @@index([workspaceId])
+}
+
+model BotSession {
+  id            String    @id @default(cuid())
+  botFlowId     String
+  contactId     String
+  currentNodeId String?
+  // Variables collected during the flow.
+  variables     Json      @default("{}")
+  completedAt   DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  botFlow BotFlow @relation(fields: [botFlowId], references: [id], onDelete: Cascade)
+
+  @@index([botFlowId])
+}
+
+// ---------------------------------------------------------------------------
+// Raw webhook log (for idempotency, replay and debugging)
+// ---------------------------------------------------------------------------
+
+model WebhookEvent {
+  id          String    @id @default(cuid())
+  workspaceId String?
+  payload     Json
+  receivedAt  DateTime  @default(now())
+  processedAt DateTime?
+  error       String?
+
+  workspace Workspace? @relation(fields: [workspaceId], references: [id])
+
+  @@index([receivedAt])
+}

@@ -1,0 +1,22 @@
+{
+  "name": "sunaidi-whatsapp",
+  "private": true,
+  "version": "0.0.0",
+  "description": "In-house WhatsApp platform for Sunaidi Expo events",
+  "packageManager": "pnpm@10.28.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "db:generate": "pnpm --filter @sunaidi/db generate",
+    "db:migrate": "pnpm --filter @sunaidi/db migrate"
+  },
+  "devDependencies": {
+    "turbo": "2.3.3",
+    "typescript": "5.7.2"
+  }
+}
