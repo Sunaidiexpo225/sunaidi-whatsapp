@@ -3,7 +3,7 @@ import {
   type SendMessageResult,
   type WhatsAppClientConfig,
   WhatsAppApiError,
-} from "./types.js";
+} from "./types";
 
 /**
  * Thin typed wrapper over the Meta WhatsApp Cloud API (Graph API).

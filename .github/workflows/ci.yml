@@ -23,14 +23,11 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
 
-      - name: Generate Prisma client
-        run: pnpm --filter @sunaidi/db exec prisma generate
+      - name: Build
+        run: pnpm build
 
-      - name: Validate Prisma schema
-        env:
-          DATABASE_URL: postgresql://user:pass@localhost:5432/db
-          DIRECT_URL: postgresql://user:pass@localhost:5432/db
-        run: pnpm --filter @sunaidi/db exec prisma validate
+      - name: Typecheck
+        run: pnpm typecheck
 
-      - name: Typecheck WhatsApp client
-        run: pnpm --filter @sunaidi/whatsapp exec tsc --noEmit
+      - name: Test
+        run: pnpm test
