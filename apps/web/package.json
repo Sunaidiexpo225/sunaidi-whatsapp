@@ -1,0 +1,14 @@
+{
+  "name": "@sunaidi/web",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Next.js web app: shared inbox, contacts, templates, campaigns, dashboard",
+  "scripts": {
+    "dev": "echo \"web app is scaffolded in a later PR\" && exit 0",
+    "build": "echo \"web app is scaffolded in a later PR\" && exit 0",
+    "typecheck": "echo \"web app is scaffolded in a later PR\" && exit 0"
+  },
+  "dependencies": {
+    "@sunaidi/db": "workspace:*"
+  }
+}

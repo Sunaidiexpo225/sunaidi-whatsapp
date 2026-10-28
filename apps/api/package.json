@@ -1,0 +1,15 @@
+{
+  "name": "@sunaidi/api",
+  "version": "0.0.0",
+  "private": true,
+  "description": "NestJS API: webhook receiver and REST endpoints",
+  "scripts": {
+    "dev": "echo \"api app is scaffolded in a later PR\" && exit 0",
+    "build": "echo \"api app is scaffolded in a later PR\" && exit 0",
+    "typecheck": "echo \"api app is scaffolded in a later PR\" && exit 0"
+  },
+  "dependencies": {
+    "@sunaidi/db": "workspace:*",
+    "@sunaidi/whatsapp": "workspace:*"
+  }
+}
