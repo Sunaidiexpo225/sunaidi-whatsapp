@@ -1,3 +1,3 @@
-export * from "./types.js";
-export * from "./client.js";
-export * from "./webhook.js";
+export * from "./types";
+export * from "./client";
+export * from "./webhook";
