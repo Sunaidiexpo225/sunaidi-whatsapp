@@ -8,10 +8,13 @@ export interface EventSummary {
   phone: { id: string; displayPhone: string; displayName: string | null } | null;
 }
 
+export type ConversationStatus = "OPEN" | "PENDING" | "RESOLVED";
+
 export interface ConversationSummary {
   id: string;
-  status: "OPEN" | "PENDING" | "RESOLVED";
+  status: ConversationStatus;
   lastMessageAt: string | null;
+  assignee: { id: string; name: string | null; email: string } | null;
   contact: {
     id: string;
     name: string | null;
@@ -121,6 +124,23 @@ export interface AutomationRow {
   enabled: boolean;
   eventName: string | null;
   updatedAt: string;
+}
+
+export type UserRole = "ADMIN" | "SUPERVISOR" | "AGENT";
+
+export interface UserRow {
+  id: string;
+  email: string;
+  name: string | null;
+  role: UserRole;
+  createdAt: string;
+}
+
+export interface CannedReplyRow {
+  id: string;
+  title: string;
+  body: string;
+  shortcut: string | null;
 }
 
 export interface NumberRow {
@@ -249,4 +269,29 @@ export const api = {
     local<{ id: string; enabled: boolean }>(`/api/automations/${id}`, "PATCH", { enabled }),
 
   listNumbers: () => get<NumberRow[]>("/numbers"),
+
+  assignConversation: (id: string, assigneeId: string | null) =>
+    local<{ id: string; assigneeId: string | null }>(
+      `/api/conversations/${id}/assign`,
+      "PATCH",
+      { assigneeId },
+    ),
+  setConversationStatus: (id: string, status: ConversationStatus) =>
+    local<{ id: string; status: ConversationStatus }>(
+      `/api/conversations/${id}/status`,
+      "PATCH",
+      { status },
+    ),
+
+  listUsers: () => get<UserRow[]>("/users"),
+  createUser: (input: { email: string; name?: string; role: UserRole }) =>
+    local<UserRow>("/api/users", "POST", input),
+  updateUser: (id: string, input: { name?: string; role?: UserRole }) =>
+    local<UserRow>(`/api/users/${id}`, "PATCH", input),
+
+  listCannedReplies: () => get<CannedReplyRow[]>("/canned-replies"),
+  createCannedReply: (input: { title: string; body: string; shortcut?: string }) =>
+    local<CannedReplyRow>("/api/canned-replies", "POST", input),
+  deleteCannedReply: (id: string) =>
+    local<{ ok: true }>(`/api/canned-replies/${id}`, "DELETE"),
 };

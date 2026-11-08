@@ -52,3 +52,59 @@ describe("InboxService.listConversations", () => {
     assert.equal(result[0]!.lastMessage?.type, "image");
   });
 });
+
+describe("InboxService.assign", () => {
+  it("rejects an unknown agent and never writes", async () => {
+    let updated = false;
+    const prisma = {
+      user: { findUnique: async () => null },
+      conversation: {
+        update: async () => {
+          updated = true;
+          return {};
+        },
+      },
+    } as unknown as PrismaClient;
+
+    await assert.rejects(() => new InboxService(prisma).assign("conv1", "ghost"), /Unknown agent/);
+    assert.equal(updated, false);
+  });
+
+  it("unassigns without looking up a user", async () => {
+    let lookedUp = false;
+    const prisma = {
+      user: {
+        findUnique: async () => {
+          lookedUp = true;
+          return { id: "u1" };
+        },
+      },
+      conversation: {
+        update: async ({ data }: { data: { assigneeId: string | null } }) => ({
+          id: "conv1",
+          assigneeId: data.assigneeId,
+        }),
+      },
+    } as unknown as PrismaClient;
+
+    const res = await new InboxService(prisma).assign("conv1", null);
+    assert.equal(res.assigneeId, null);
+    assert.equal(lookedUp, false);
+  });
+});
+
+describe("InboxService.setStatus", () => {
+  it("writes the requested status", async () => {
+    const prisma = {
+      conversation: {
+        update: async ({ data }: { data: { status: string } }) => ({
+          id: "conv1",
+          status: data.status,
+        }),
+      },
+    } as unknown as PrismaClient;
+
+    const res = await new InboxService(prisma).setStatus("conv1", "RESOLVED" as never);
+    assert.equal(res.status, "RESOLVED");
+  });
+});

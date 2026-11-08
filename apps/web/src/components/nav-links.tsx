@@ -11,6 +11,7 @@ const LINKS = [
   { href: "/contacts", label: "Contacts" },
   { href: "/automations", label: "Automations" },
   { href: "/numbers", label: "Numbers" },
+  { href: "/team", label: "Team" },
 ];
 
 export function NavLinks() {

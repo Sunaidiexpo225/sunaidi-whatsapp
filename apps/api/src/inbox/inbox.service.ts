@@ -1,5 +1,5 @@
-import { Inject, Injectable } from "@nestjs/common";
-import { type ConversationStatus, type PrismaClient } from "@sunaidi/db";
+import { BadRequestException, Inject, Injectable } from "@nestjs/common";
+import { ConversationStatus, type PrismaClient } from "@sunaidi/db";
 import { PRISMA } from "../db/prisma.module";
 
 export interface EventSummary {
@@ -14,10 +14,17 @@ export interface VisitorInfo {
   consent: string;
 }
 
+export interface AssigneeInfo {
+  id: string;
+  name: string | null;
+  email: string;
+}
+
 export interface ConversationSummary {
   id: string;
   status: ConversationStatus;
   lastMessageAt: Date | null;
+  assignee: AssigneeInfo | null;
   contact: { id: string; name: string | null; waId: string; visitor: VisitorInfo | null };
   lastMessage: { type: string; text: string | null; direction: string; createdAt: Date } | null;
 }
@@ -76,6 +83,7 @@ export class InboxService {
         id: true,
         status: true,
         lastMessageAt: true,
+        assignee: { select: { id: true, name: true, email: true } },
         contact: {
           select: {
             id: true,
@@ -99,6 +107,9 @@ export class InboxService {
         id: c.id,
         status: c.status,
         lastMessageAt: c.lastMessageAt,
+        assignee: c.assignee
+          ? { id: c.assignee.id, name: c.assignee.name, email: c.assignee.email }
+          : null,
         contact: {
           id: c.contact.id,
           name: c.contact.name,
@@ -141,6 +152,38 @@ export class InboxService {
       status: m.status,
       createdAt: m.createdAt,
     }));
+  }
+
+  /** Assign (or, with null, unassign) a conversation to an agent. */
+  async assign(
+    conversationId: string,
+    assigneeId: string | null,
+  ): Promise<{ id: string; assigneeId: string | null }> {
+    if (assigneeId) {
+      const user = await this.prisma.user.findUnique({
+        where: { id: assigneeId },
+        select: { id: true },
+      });
+      if (!user) throw new BadRequestException("Unknown agent");
+    }
+    const updated = await this.prisma.conversation.update({
+      where: { id: conversationId },
+      data: { assigneeId },
+      select: { id: true, assigneeId: true },
+    });
+    return updated;
+  }
+
+  async setStatus(
+    conversationId: string,
+    status: ConversationStatus,
+  ): Promise<{ id: string; status: ConversationStatus }> {
+    const updated = await this.prisma.conversation.update({
+      where: { id: conversationId },
+      data: { status },
+      select: { id: true, status: true },
+    });
+    return updated;
   }
 }
 
