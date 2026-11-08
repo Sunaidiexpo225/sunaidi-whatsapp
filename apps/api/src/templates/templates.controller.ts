@@ -1,4 +1,12 @@
-import { BadRequestException, Body, Controller, Get, Post, UseGuards } from "@nestjs/common";
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  Param,
+  Post,
+  UseGuards,
+} from "@nestjs/common";
 import { TemplateCategory } from "@sunaidi/db";
 import { z } from "zod";
 import { ApiKeyGuard } from "../outbound/api-key.guard";
@@ -32,5 +40,11 @@ export class TemplatesController {
       throw new BadRequestException(`Invalid request: ${issues}`);
     }
     return this.templates.create(parsed.data);
+  }
+
+  @UseGuards(ApiKeyGuard)
+  @Post(":id/submit")
+  submit(@Param("id") id: string): Promise<{ id: string; status: string; metaId: string | null }> {
+    return this.templates.submit(id);
   }
 }

@@ -19,6 +19,22 @@ export interface CreateAutomationInput {
   actions?: unknown[];
 }
 
+export interface AutomationDetail {
+  id: string;
+  name: string;
+  trigger: string;
+  enabled: boolean;
+  eventId: string | null;
+  conditions: Record<string, unknown>;
+  actions: unknown[];
+}
+
+export interface UpdateAutomationInput {
+  name?: string;
+  conditions?: Record<string, unknown>;
+  actions?: unknown[];
+}
+
 @Injectable()
 export class AutomationsService {
   constructor(@Inject(PRISMA) private readonly prisma: PrismaClient) {}
@@ -72,6 +88,52 @@ export class AutomationsService {
       select: { id: true, enabled: true },
     });
     return automation;
+  }
+
+  async get(id: string): Promise<AutomationDetail> {
+    const a = await this.prisma.automation.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        name: true,
+        trigger: true,
+        enabled: true,
+        eventId: true,
+        conditions: true,
+        actions: true,
+      },
+    });
+    if (!a) throw new NotFoundException("Automation not found");
+    return {
+      id: a.id,
+      name: a.name,
+      trigger: a.trigger,
+      enabled: a.enabled,
+      eventId: a.eventId,
+      conditions: (a.conditions as Record<string, unknown>) ?? {},
+      actions: Array.isArray(a.actions) ? (a.actions as unknown[]) : [],
+    };
+  }
+
+  async update(id: string, input: UpdateAutomationInput): Promise<{ id: string }> {
+    const existing = await this.prisma.automation.findUnique({
+      where: { id },
+      select: { id: true },
+    });
+    if (!existing) throw new NotFoundException("Automation not found");
+    return this.prisma.automation.update({
+      where: { id },
+      data: {
+        ...(input.name !== undefined ? { name: input.name } : {}),
+        ...(input.conditions !== undefined
+          ? { conditions: input.conditions as Prisma.InputJsonValue }
+          : {}),
+        ...(input.actions !== undefined
+          ? { actions: input.actions as Prisma.InputJsonValue }
+          : {}),
+      },
+      select: { id: true },
+    });
   }
 
   async setEnabled(id: string, enabled: boolean): Promise<{ id: string; enabled: boolean }> {

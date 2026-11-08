@@ -126,6 +126,16 @@ export interface AutomationRow {
   updatedAt: string;
 }
 
+export interface AutomationDetail {
+  id: string;
+  name: string;
+  trigger: string;
+  enabled: boolean;
+  eventId: string | null;
+  conditions: Record<string, unknown>;
+  actions: unknown[];
+}
+
 export type UserRole = "ADMIN" | "SUPERVISOR" | "AGENT";
 
 export interface UserRow {
@@ -239,6 +249,12 @@ export const api = {
     components?: unknown[];
   }) => local<{ id: string; status: string }>("/api/templates", "POST", input),
 
+  submitTemplate: (id: string) =>
+    local<{ id: string; status: string; metaId: string | null }>(
+      `/api/templates/${id}/submit`,
+      "POST",
+    ),
+
   listContacts: (filter: ContactFilter = {}) => {
     const qs = new URLSearchParams();
     if (filter.search) qs.set("search", filter.search);
@@ -267,6 +283,11 @@ export const api = {
     local<{ id: string; enabled: boolean }>("/api/automations", "POST", input),
   toggleAutomation: (id: string, enabled: boolean) =>
     local<{ id: string; enabled: boolean }>(`/api/automations/${id}`, "PATCH", { enabled }),
+  getAutomation: (id: string) => get<AutomationDetail>(`/automations/${id}`),
+  updateAutomationConfig: (
+    id: string,
+    input: { name?: string; conditions?: Record<string, unknown>; actions?: unknown[] },
+  ) => local<{ id: string }>(`/api/automations/${id}/config`, "PATCH", input),
 
   listNumbers: () => get<NumberRow[]>("/numbers"),
 

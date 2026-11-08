@@ -1,5 +1,11 @@
-import { BadRequestException, Inject, Injectable } from "@nestjs/common";
-import { Prisma, type PrismaClient, type TemplateCategory } from "@sunaidi/db";
+import {
+  BadRequestException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
+import { Prisma, TemplateStatus, type PrismaClient, type TemplateCategory } from "@sunaidi/db";
+import { WhatsAppApiError, WhatsAppClient } from "@sunaidi/whatsapp";
 import { PRISMA } from "../db/prisma.module";
 
 export interface TemplateRow {
@@ -65,6 +71,71 @@ export class TemplatesService {
       select: { id: true, status: true },
     });
     return template;
+  }
+
+  /**
+   * Submit a draft template to Meta for approval. Uses the owning event's
+   * WhatsApp number (WABA + token) to call the Graph API; on success the
+   * template moves to PENDING and stores Meta's template id.
+   */
+  async submit(templateId: string): Promise<{ id: string; status: string; metaId: string | null }> {
+    const template = await this.prisma.messageTemplate.findUnique({
+      where: { id: templateId },
+      select: {
+        id: true,
+        name: true,
+        language: true,
+        category: true,
+        components: true,
+        status: true,
+        eventId: true,
+      },
+    });
+    if (!template) throw new NotFoundException("Template not found");
+    if (template.status !== TemplateStatus.DRAFT && template.status !== TemplateStatus.REJECTED) {
+      throw new BadRequestException(`Template is already ${template.status}`);
+    }
+    if (!template.eventId) {
+      throw new BadRequestException(
+        "Assign the template to an event before submitting, so it can use that number's WhatsApp account.",
+      );
+    }
+    const phone = await this.prisma.phoneNumber.findUnique({
+      where: { eventId: template.eventId },
+      select: { wabaId: true, accessToken: true, graphApiVersion: true },
+    });
+    if (!phone) {
+      throw new BadRequestException("That event has no connected WhatsApp number yet");
+    }
+
+    const components = Array.isArray(template.components) ? (template.components as unknown[]) : [];
+    const client = new WhatsAppClient({
+      accessToken: phone.accessToken,
+      graphApiVersion: phone.graphApiVersion,
+    });
+
+    let metaId: string;
+    try {
+      const created = await client.createMessageTemplate(phone.wabaId, {
+        name: template.name,
+        language: template.language,
+        category: template.category,
+        components,
+      });
+      metaId = created.id;
+    } catch (err) {
+      if (err instanceof WhatsAppApiError) {
+        throw new BadRequestException(`Meta rejected the template: ${err.message}`);
+      }
+      throw err;
+    }
+
+    const updated = await this.prisma.messageTemplate.update({
+      where: { id: templateId },
+      data: { status: TemplateStatus.PENDING, metaId },
+      select: { id: true, status: true, metaId: true },
+    });
+    return updated;
   }
 
   private async resolveWorkspaceId(eventId?: string): Promise<string> {
