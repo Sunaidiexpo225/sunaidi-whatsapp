@@ -101,6 +101,7 @@ describe("CampaignService.start", () => {
         findUnique: async () => ({
           id: "camp1",
           status: "DRAFT",
+          scheduledAt: null,
           recipients: [{ id: "r1" }, { id: "r2" }],
         }),
         update: async () => ({}),
@@ -117,5 +118,59 @@ describe("CampaignService.start", () => {
     assert.equal(result.queued, 2);
     assert.equal(enqueued.length, 2);
     assert.deepEqual(enqueued[0], { campaignId: "camp1", recipientId: "r1" });
+  });
+
+  it("stays SCHEDULED and delays the jobs when scheduledAt is in the future", async () => {
+    const opts: Array<Record<string, unknown>> = [];
+    const future = new Date(Date.now() + 60 * 60 * 1000);
+    const prisma = {
+      campaign: {
+        findUnique: async () => ({
+          id: "camp1",
+          status: "DRAFT",
+          scheduledAt: future,
+          recipients: [{ id: "r1" }],
+        }),
+        update: async () => ({}),
+      },
+    } as unknown as PrismaClient;
+    const queue = {
+      add: async (_n: string, _job: unknown, o: Record<string, unknown>) => {
+        opts.push(o);
+      },
+    } as unknown as Queue;
+
+    const result = await new CampaignService(prisma, queue).start("camp1");
+    assert.equal(result.status, "SCHEDULED");
+    assert.ok(typeof opts[0]!.delay === "number" && (opts[0]!.delay as number) > 0);
+    assert.equal(opts[0]!.jobId, "r1");
+  });
+});
+
+describe("CampaignService.createFromAudience", () => {
+  it("resolves matching contacts into recipient rows", async () => {
+    let createManyCount = 0;
+    const prisma = {
+      phoneNumber: { findUnique: async () => ({ id: "p1", workspaceId: "ws1" }) },
+      contact: { findMany: async () => [{ id: "c1" }, { id: "c2" }, { id: "c3" }] },
+      campaign: { create: async () => ({ id: "camp1", status: "DRAFT" }) },
+      campaignRecipient: {
+        createMany: async ({ data }: { data: unknown[] }) => {
+          createManyCount = data.length;
+          return { count: data.length };
+        },
+      },
+    } as unknown as PrismaClient;
+
+    const result = await new CampaignService(prisma, {} as unknown as Queue).createFromAudience({
+      eventId: "11111111-1111-1111-1111-111111111111",
+      name: "Opted-in blast",
+      templateName: "promo",
+      templateLanguage: "en",
+      consent: "OPTED_IN" as never,
+    });
+
+    assert.equal(result.recipientCount, 3);
+    assert.equal(createManyCount, 3);
   });
 });

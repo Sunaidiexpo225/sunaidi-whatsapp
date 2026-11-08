@@ -236,7 +236,28 @@ export const api = {
     templateName: string;
     templateLanguage: string;
     recipients: CampaignRecipientInput[];
+    scheduledAt?: string;
   }) => local<{ id: string; status: string; recipientCount: number }>("/api/campaigns", "POST", input),
+  createCampaignFromAudience: (input: {
+    eventId: string;
+    name: string;
+    templateName: string;
+    templateLanguage: string;
+    consent?: ConsentFilter;
+    tagId?: string;
+    scheduledAt?: string;
+  }) =>
+    local<{ id: string; status: string; recipientCount: number }>(
+      "/api/campaigns/audience",
+      "POST",
+      input,
+    ),
+  previewAudience: (input: { eventId: string; consent?: ConsentFilter; tagId?: string }) => {
+    const qs = new URLSearchParams({ eventId: input.eventId });
+    if (input.consent) qs.set("consent", input.consent);
+    if (input.tagId) qs.set("tagId", input.tagId);
+    return get<{ count: number }>(`/campaigns/audience/preview?${qs.toString()}`);
+  },
   startCampaign: (id: string) =>
     local<{ id: string; status: string; queued: number }>(`/api/campaigns/${id}/start`, "POST", {}),
 
