@@ -3,11 +3,26 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   api,
+  type CannedReplyRow,
+  type ConversationStatus,
   type ConversationSummary,
   type EventSummary,
   type MessageView,
+  type UserRow,
 } from "@/lib/api";
 import { NavLinks } from "@/components/nav-links";
+
+function StatusPill({ status }: { status: ConversationStatus }) {
+  const color =
+    status === "OPEN"
+      ? "bg-green-100 text-green-700"
+      : status === "PENDING"
+        ? "bg-amber-100 text-amber-700"
+        : "bg-gray-200 text-gray-600";
+  return (
+    <span className={`rounded px-1.5 py-0.5 text-xs ${color}`}>{status.toLowerCase()}</span>
+  );
+}
 
 function formatTime(iso: string | null): string {
   if (!iso) return "";
@@ -39,9 +54,14 @@ export default function InboxPage() {
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | undefined>(undefined);
+  const [users, setUsers] = useState<UserRow[]>([]);
+  const [canned, setCanned] = useState<CannedReplyRow[]>([]);
+  const [showCanned, setShowCanned] = useState(false);
 
   useEffect(() => {
     api.listEvents().then(setEvents).catch((e) => setError(String(e)));
+    api.listUsers().then(setUsers).catch(() => {});
+    api.listCannedReplies().then(setCanned).catch(() => {});
   }, []);
 
   const loadConversations = useCallback(() => {
@@ -85,6 +105,34 @@ export default function InboxPage() {
       setSending(false);
     }
   }, [activeId, draft, sending, loadConversations]);
+
+  const assign = useCallback(
+    async (assigneeId: string | null) => {
+      if (!activeId) return;
+      setError(undefined);
+      try {
+        await api.assignConversation(activeId, assigneeId);
+        await loadConversations();
+      } catch (e) {
+        setError(String(e));
+      }
+    },
+    [activeId, loadConversations],
+  );
+
+  const changeStatus = useCallback(
+    async (status: ConversationStatus) => {
+      if (!activeId) return;
+      setError(undefined);
+      try {
+        await api.setConversationStatus(activeId, status);
+        await loadConversations();
+      } catch (e) {
+        setError(String(e));
+      }
+    },
+    [activeId, loadConversations],
+  );
 
   return (
     <div className="flex h-screen flex-col">
@@ -158,10 +206,45 @@ export default function InboxPage() {
           {active ? (
             <>
               <div className="border-b bg-white px-4 py-3">
-                <p className="font-medium">
-                  {active.contact.name ?? active.contact.waId}
-                </p>
-                <p className="text-xs text-gray-500">{active.contact.waId}</p>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="flex items-center gap-2 font-medium">
+                      {active.contact.name ?? active.contact.waId}
+                      <StatusPill status={active.status} />
+                    </p>
+                    <p className="text-xs text-gray-500">{active.contact.waId}</p>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <select
+                      value={active.assignee?.id ?? ""}
+                      onChange={(e) => void assign(e.target.value || null)}
+                      className="rounded border px-2 py-1 text-xs"
+                      title="Assign to agent"
+                    >
+                      <option value="">Unassigned</option>
+                      {users.map((u) => (
+                        <option key={u.id} value={u.id}>
+                          {u.name ?? u.email}
+                        </option>
+                      ))}
+                    </select>
+                    {active.status === "RESOLVED" ? (
+                      <button
+                        onClick={() => void changeStatus("OPEN")}
+                        className="rounded border px-3 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                      >
+                        Reopen
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => void changeStatus("RESOLVED")}
+                        className="rounded bg-gray-800 px-3 py-1 text-xs font-medium text-white hover:bg-gray-700"
+                      >
+                        Resolve
+                      </button>
+                    )}
+                  </div>
+                </div>
                 {active.contact.visitor && (
                   <p className="mt-1 flex items-center gap-2 text-xs text-gray-500">
                     <span className="rounded bg-gray-100 px-1.5 py-0.5">VDMS visitor</span>
@@ -212,6 +295,35 @@ export default function InboxPage() {
                   void sendReply();
                 }}
               >
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setShowCanned((v) => !v)}
+                    disabled={canned.length === 0}
+                    title="Insert canned reply"
+                    className="rounded border px-2 py-2 text-sm text-gray-600 hover:bg-gray-50 disabled:opacity-40"
+                  >
+                    💬
+                  </button>
+                  {showCanned && (
+                    <div className="absolute bottom-11 left-0 z-10 max-h-64 w-72 overflow-auto rounded-lg border bg-white p-1 shadow-lg">
+                      {canned.map((c) => (
+                        <button
+                          key={c.id}
+                          type="button"
+                          onClick={() => {
+                            setDraft((d) => (d ? `${d}\n${c.body}` : c.body));
+                            setShowCanned(false);
+                          }}
+                          className="block w-full rounded px-2 py-1.5 text-left hover:bg-gray-50"
+                        >
+                          <span className="block text-sm font-medium">{c.title}</span>
+                          <span className="block truncate text-xs text-gray-500">{c.body}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
                 <textarea
                   className="min-h-[40px] flex-1 resize-none rounded border px-3 py-2 text-sm focus:border-brand focus:outline-none"
                   rows={1}

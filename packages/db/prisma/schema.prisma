@@ -352,6 +352,22 @@ model Note {
   @@schema("whatsapp")
 }
 
+// A reusable reply snippet agents can insert in the inbox composer.
+model CannedReply {
+  id          String   @id @default(cuid())
+  workspaceId String
+  title       String
+  body        String
+  // Optional "/shortcut" an agent can type to find it quickly.
+  shortcut    String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([workspaceId, title])
+  @@index([workspaceId])
+  @@schema("whatsapp")
+}
+
 // ---------------------------------------------------------------------------
 // Templates and campaigns
 // ---------------------------------------------------------------------------

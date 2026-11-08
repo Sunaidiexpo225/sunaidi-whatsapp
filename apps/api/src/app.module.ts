@@ -6,6 +6,7 @@ import { QueueModule } from "./queue/queue.module";
 import { HealthController } from "./health/health.controller";
 import { AutomationsModule } from "./automations/automations.module";
 import { CampaignModule } from "./campaign/campaign.module";
+import { CannedRepliesModule } from "./canned-replies/canned-replies.module";
 import { ContactsModule } from "./contacts/contacts.module";
 import { InboxModule } from "./inbox/inbox.module";
 import { NumbersModule } from "./numbers/numbers.module";
@@ -13,6 +14,7 @@ import { OutboundModule } from "./outbound/outbound.module";
 import { StatsModule } from "./stats/stats.module";
 import { TagsModule } from "./tags/tags.module";
 import { TemplatesModule } from "./templates/templates.module";
+import { UsersModule } from "./users/users.module";
 import { WhatsappModule } from "./whatsapp/whatsapp.module";
 
 @Module({
@@ -33,6 +35,8 @@ import { WhatsappModule } from "./whatsapp/whatsapp.module";
     ContactsModule,
     AutomationsModule,
     NumbersModule,
+    UsersModule,
+    CannedRepliesModule,
   ],
   controllers: [HealthController],
 })
