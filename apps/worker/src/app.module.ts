@@ -2,6 +2,7 @@ import { Module } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
 import { validateEnv } from "./config/env";
 import { PrismaModule } from "./db/prisma.module";
+import { CampaignModule } from "./campaign/campaign.module";
 import { InboundModule } from "./inbound/inbound.module";
 import { OutboundModule } from "./outbound/outbound.module";
 
@@ -11,6 +12,7 @@ import { OutboundModule } from "./outbound/outbound.module";
     PrismaModule,
     InboundModule,
     OutboundModule,
+    CampaignModule,
   ],
 })
 export class AppModule {}

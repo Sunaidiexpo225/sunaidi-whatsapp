@@ -4,6 +4,7 @@ import { Queue } from "bullmq";
 import IORedis from "ioredis";
 import type { Env } from "../config/env";
 import {
+  CAMPAIGN_SEND_QUEUE,
   INBOUND_WEBHOOK_QUEUE,
   OUTBOUND_MESSAGE_QUEUE,
   QUEUE_NAMES,
@@ -33,7 +34,18 @@ import {
       useFactory: (connection: IORedis) =>
         new Queue(QUEUE_NAMES.OUTBOUND_MESSAGE, { connection }),
     },
+    {
+      provide: CAMPAIGN_SEND_QUEUE,
+      inject: [REDIS_CONNECTION],
+      useFactory: (connection: IORedis) =>
+        new Queue(QUEUE_NAMES.CAMPAIGN_SEND, { connection }),
+    },
   ],
-  exports: [REDIS_CONNECTION, INBOUND_WEBHOOK_QUEUE, OUTBOUND_MESSAGE_QUEUE],
+  exports: [
+    REDIS_CONNECTION,
+    INBOUND_WEBHOOK_QUEUE,
+    OUTBOUND_MESSAGE_QUEUE,
+    CAMPAIGN_SEND_QUEUE,
+  ],
 })
 export class QueueModule {}
