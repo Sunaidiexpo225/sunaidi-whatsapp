@@ -57,6 +57,42 @@ describe("CampaignService.create", () => {
   });
 });
 
+describe("CampaignService.list", () => {
+  it("merges per-status recipient counts into each campaign", async () => {
+    const prisma = {
+      campaign: {
+        findMany: async () => [
+          {
+            id: "camp1",
+            name: "Launch",
+            status: "SENDING",
+            templateName: "promo",
+            templateLanguage: "en",
+            createdAt: new Date(),
+            startedAt: null,
+            completedAt: null,
+            event: { name: "Expo" },
+            _count: { recipients: 5 },
+          },
+        ],
+      },
+      campaignRecipient: {
+        groupBy: async () => [
+          { campaignId: "camp1", status: "SENT", _count: { _all: 2 } },
+          { campaignId: "camp1", status: "DELIVERED", _count: { _all: 1 } },
+          { campaignId: "camp1", status: "FAILED", _count: { _all: 1 } },
+          { campaignId: "camp1", status: "QUEUED", _count: { _all: 1 } },
+        ],
+      },
+    } as unknown as PrismaClient;
+
+    const rows = await new CampaignService(prisma, {} as unknown as Queue).list();
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0]!.eventName, "Expo");
+    assert.deepEqual(rows[0]!.recipients, { total: 5, sent: 3, failed: 1, queued: 1 });
+  });
+});
+
 describe("CampaignService.start", () => {
   it("moves to SENDING and enqueues one job per queued recipient", async () => {
     const enqueued: unknown[] = [];

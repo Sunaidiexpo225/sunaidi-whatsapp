@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { api, type DashboardSummary } from "@/lib/api";
-import { NavLinks } from "@/components/nav-links";
+import { AppHeader } from "@/components/app-header";
 
 function Stat({ label, value, sub }: { label: string; value: number | string; sub?: string }) {
   return (
@@ -29,10 +29,7 @@ export default function DashboardPage() {
 
   return (
     <div className="min-h-screen">
-      <header className="flex items-center gap-4 bg-brand px-4 py-3 text-white">
-        <h1 className="text-lg font-semibold">Sunaidi WhatsApp</h1>
-        <NavLinks />
-      </header>
+      <AppHeader />
 
       <main className="mx-auto max-w-6xl p-4 sm:p-6">
         {error && (
