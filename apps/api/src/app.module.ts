@@ -5,6 +5,7 @@ import { PrismaModule } from "./db/prisma.module";
 import { QueueModule } from "./queue/queue.module";
 import { HealthController } from "./health/health.controller";
 import { InboxModule } from "./inbox/inbox.module";
+import { OutboundModule } from "./outbound/outbound.module";
 import { WhatsappModule } from "./whatsapp/whatsapp.module";
 
 @Module({
@@ -17,6 +18,7 @@ import { WhatsappModule } from "./whatsapp/whatsapp.module";
     QueueModule,
     WhatsappModule,
     InboxModule,
+    OutboundModule,
   ],
   controllers: [HealthController],
 })

@@ -35,6 +35,8 @@ export default function InboxPage() {
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [activeId, setActiveId] = useState<string | undefined>(undefined);
   const [messages, setMessages] = useState<MessageView[]>([]);
+  const [draft, setDraft] = useState("");
+  const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | undefined>(undefined);
 
   useEffect(() => {
@@ -61,6 +63,27 @@ export default function InboxPage() {
   }, [activeId]);
 
   const active = conversations.find((c) => c.id === activeId);
+
+  const sendReply = useCallback(async () => {
+    const text = draft.trim();
+    if (!activeId || !text || sending) return;
+    setSending(true);
+    setError(undefined);
+    try {
+      await api.sendReply(activeId, text);
+      setDraft("");
+      // Reflect the queued message and refresh the list ordering.
+      const [refreshed] = await Promise.all([
+        api.getMessages(activeId),
+        loadConversations(),
+      ]);
+      setMessages(refreshed);
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setSending(false);
+    }
+  }, [activeId, draft, sending, loadConversations]);
 
   return (
     <div className="flex h-screen flex-col">
@@ -180,9 +203,34 @@ export default function InboxPage() {
                   </div>
                 ))}
               </div>
-              <div className="border-t bg-white p-3 text-center text-sm text-gray-400">
-                Replying from the inbox ships in the next update.
-              </div>
+              <form
+                className="flex items-end gap-2 border-t bg-white p-3"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  void sendReply();
+                }}
+              >
+                <textarea
+                  className="min-h-[40px] flex-1 resize-none rounded border px-3 py-2 text-sm focus:border-brand focus:outline-none"
+                  rows={1}
+                  placeholder="Type a reply…"
+                  value={draft}
+                  onChange={(e) => setDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      void sendReply();
+                    }
+                  }}
+                />
+                <button
+                  type="submit"
+                  disabled={sending || draft.trim().length === 0}
+                  className="rounded bg-brand px-4 py-2 text-sm font-medium text-white disabled:opacity-40"
+                >
+                  {sending ? "Sending…" : "Send"}
+                </button>
+              </form>
             </>
           ) : (
             <div className="flex flex-1 items-center justify-center text-gray-400">

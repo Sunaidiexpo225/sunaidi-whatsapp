@@ -44,6 +44,21 @@ async function get<T>(path: string): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+async function post<T>(path: string, body: unknown): Promise<T> {
+  const res = await fetch(`${API_URL}${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const detail = await res.json().catch(() => null);
+    throw new Error(
+      (detail && (detail.message as string)) ?? `Request failed: ${res.status} ${path}`,
+    );
+  }
+  return res.json() as Promise<T>;
+}
+
 export const api = {
   listEvents: () => get<EventSummary[]>("/events"),
   listConversations: (eventId?: string) =>
@@ -52,4 +67,9 @@ export const api = {
     ),
   getMessages: (conversationId: string) =>
     get<MessageView[]>(`/conversations/${conversationId}/messages`),
+  sendReply: (conversationId: string, text: string) =>
+    post<{ id: string; status: string }>(
+      `/conversations/${conversationId}/messages`,
+      { text },
+    ),
 };

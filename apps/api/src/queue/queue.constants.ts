@@ -14,7 +14,15 @@ export const REDIS_CONNECTION = "REDIS_CONNECTION";
 /** Injection token for the inbound-webhook BullMQ queue. */
 export const INBOUND_WEBHOOK_QUEUE = "INBOUND_WEBHOOK_QUEUE";
 
+/** Injection token for the outbound-message BullMQ queue. */
+export const OUTBOUND_MESSAGE_QUEUE = "OUTBOUND_MESSAGE_QUEUE";
+
 export interface InboundWebhookJob {
   /** Id of the WebhookEvent row this job should process. */
   webhookEventId: string;
+}
+
+export interface OutboundMessageJob {
+  /** Id of the Message row (direction OUTBOUND) this job should send. */
+  messageId: string;
 }
