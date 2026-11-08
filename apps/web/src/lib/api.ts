@@ -12,7 +12,13 @@ export interface ConversationSummary {
   id: string;
   status: "OPEN" | "PENDING" | "RESOLVED";
   lastMessageAt: string | null;
-  contact: { id: string; name: string | null; waId: string };
+  contact: {
+    id: string;
+    name: string | null;
+    waId: string;
+    // Set when the WhatsApp number matches a VDMS visitor record.
+    visitor: { name: string; company: string; consent: string } | null;
+  };
   lastMessage: {
     type: string;
     text: string | null;

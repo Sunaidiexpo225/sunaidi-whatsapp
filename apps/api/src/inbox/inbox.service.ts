@@ -8,11 +8,17 @@ export interface EventSummary {
   phone: { id: string; displayPhone: string; displayName: string | null } | null;
 }
 
+export interface VisitorInfo {
+  name: string;
+  company: string;
+  consent: string;
+}
+
 export interface ConversationSummary {
   id: string;
   status: ConversationStatus;
   lastMessageAt: Date | null;
-  contact: { id: string; name: string | null; waId: string };
+  contact: { id: string; name: string | null; waId: string; visitor: VisitorInfo | null };
   lastMessage: { type: string; text: string | null; direction: string; createdAt: Date } | null;
 }
 
@@ -30,8 +36,9 @@ export class InboxService {
   constructor(@Inject(PRISMA) private readonly prisma: PrismaClient) {}
 
   async listEvents(): Promise<EventSummary[]> {
-    const events = await this.prisma.event.findMany({
-      where: { archivedAt: null },
+    // VDMS owns events; we only surface those with a WhatsApp number attached.
+    const events = await this.prisma.vdmsEvent.findMany({
+      where: { phoneNumber: { isNot: null } },
       orderBy: { name: "asc" },
       select: {
         id: true,
@@ -69,7 +76,14 @@ export class InboxService {
         id: true,
         status: true,
         lastMessageAt: true,
-        contact: { select: { id: true, name: true, waId: true } },
+        contact: {
+          select: {
+            id: true,
+            name: true,
+            waId: true,
+            visitor: { select: { name: true, company: true, consent: true } },
+          },
+        },
         messages: {
           orderBy: { createdAt: "desc" },
           take: 1,
@@ -80,11 +94,19 @@ export class InboxService {
 
     return conversations.map((c) => {
       const last = c.messages[0];
+      const visitor = c.contact.visitor;
       return {
         id: c.id,
         status: c.status,
         lastMessageAt: c.lastMessageAt,
-        contact: c.contact,
+        contact: {
+          id: c.contact.id,
+          name: c.contact.name,
+          waId: c.contact.waId,
+          visitor: visitor
+            ? { name: visitor.name, company: visitor.company, consent: String(visitor.consent) }
+            : null,
+        },
         lastMessage: last
           ? {
               type: last.type,

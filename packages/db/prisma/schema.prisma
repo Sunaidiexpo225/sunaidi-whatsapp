@@ -1,20 +1,80 @@
 // Sunaidi WhatsApp platform — core data model.
-// One workspace per deployment for now; every table carries workspaceId so the
-// platform can become multi-tenant later without a rewrite. An "Event" is the
-// top-level unit (each of the 5 WATI numbers belongs to one Sunaidi event).
+//
+// This platform REPLACES WATI's sending/inbox layer for VDMS (the visitor
+// registration system). VDMS stays the system of record for events and
+// visitors; its tables live in the `public` schema of the shared Supabase
+// database. Everything this platform owns (phone numbers, conversations,
+// messages, templates, campaigns) lives in a dedicated `whatsapp` schema in
+// the SAME database, so we read VDMS data directly instead of duplicating it.
+//
+// VDMS `events` and `visitors` are exposed here as read-only Prisma `view`
+// models; we never write to them. An "event" is still the top-level unit (each
+// of the 5 WhatsApp numbers belongs to one VDMS event).
 
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
+  previewFeatures = ["multiSchema", "views"]
 }
 
 datasource db {
   provider  = "postgresql"
   url       = env("DATABASE_URL")
   directUrl = env("DIRECT_URL")
+  schemas   = ["whatsapp", "public"]
 }
 
 // ---------------------------------------------------------------------------
-// Workspace, users, teams
+// VDMS (read-only views onto the public schema — owned by VDMS, never written)
+// ---------------------------------------------------------------------------
+
+enum ConsentStatus {
+  OPTED_IN  @map("Opted-in")
+  PENDING   @map("Pending")
+  OPTED_OUT @map("Opted-out")
+
+  @@map("consent_status")
+  @@schema("public")
+}
+
+/// VDMS event (e.g. Saudi Franchise Expo, Jewellery Salon). Source of truth
+/// lives in VDMS; we attach one WhatsApp number, templates and campaigns to it.
+view VdmsEvent {
+  id        String   @id @db.Uuid
+  name      String
+  createdAt DateTime @map("created_at")
+
+  phoneNumber PhoneNumber?
+  templates   MessageTemplate[]
+  campaigns   Campaign[]
+  visitors    VdmsVisitor[]
+
+  @@map("events")
+  @@schema("public")
+}
+
+/// VDMS visitor (registration record). We match inbound WhatsApp contacts to
+/// these by phone to show the agent who they are and read their consent.
+view VdmsVisitor {
+  id        String        @id @db.Uuid
+  name      String
+  company   String
+  phone     String
+  email     String
+  eventId   String?       @map("event_id") @db.Uuid
+  consent   ConsentStatus
+  country   String
+  source    String
+  createdAt DateTime      @map("created_at")
+
+  event    VdmsEvent? @relation(fields: [eventId], references: [id])
+  contacts Contact[]
+
+  @@map("visitors")
+  @@schema("public")
+}
+
+// ---------------------------------------------------------------------------
+// Workspace, users, teams (whatsapp schema)
 // ---------------------------------------------------------------------------
 
 model Workspace {
@@ -25,7 +85,6 @@ model Workspace {
 
   users         User[]
   teams         Team[]
-  events        Event[]
   phoneNumbers  PhoneNumber[]
   contacts      Contact[]
   conversations Conversation[]
@@ -35,12 +94,16 @@ model Workspace {
   automations   Automation[]
   botFlows      BotFlow[]
   webhookEvents WebhookEvent[]
+
+  @@schema("whatsapp")
 }
 
 enum Role {
   ADMIN
   SUPERVISOR
   AGENT
+
+  @@schema("whatsapp")
 }
 
 model User {
@@ -61,6 +124,7 @@ model User {
 
   @@unique([workspaceId, email])
   @@index([workspaceId])
+  @@schema("whatsapp")
 }
 
 model Team {
@@ -72,9 +136,9 @@ model Team {
   workspace     Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   members       TeamMember[]
   conversations Conversation[] @relation("ConversationTeam")
-  events        Event[]
 
   @@index([workspaceId])
+  @@schema("whatsapp")
 }
 
 model TeamMember {
@@ -85,46 +149,27 @@ model TeamMember {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@id([teamId, userId])
+  @@schema("whatsapp")
 }
 
 // ---------------------------------------------------------------------------
-// Events and phone numbers
+// Phone numbers (each attached to one VDMS event)
 // ---------------------------------------------------------------------------
-
-// One Sunaidi event (e.g. Saudi Franchise Expo, Jewellery Salon). Each event
-// owns one WhatsApp number and its own inbox, templates, campaigns and reports.
-model Event {
-  id          String    @id @default(cuid())
-  workspaceId String
-  name        String
-  // Optional owning team for default routing.
-  teamId      String?
-  startsOn    DateTime?
-  endsOn      DateTime?
-  archivedAt  DateTime?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-
-  workspace   Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  team        Team?             @relation(fields: [teamId], references: [id])
-  phoneNumber PhoneNumber?
-  templates   MessageTemplate[]
-  campaigns   Campaign[]
-
-  @@index([workspaceId])
-}
 
 enum QualityRating {
   GREEN
   YELLOW
   RED
   UNKNOWN
+
+  @@schema("whatsapp")
 }
 
 model PhoneNumber {
   id             String        @id @default(cuid())
   workspaceId    String
-  eventId        String        @unique
+  // VDMS event this number belongs to (public.events.id).
+  eventId        String        @unique @db.Uuid
   // Meta WhatsApp Business Account id this number belongs to.
   wabaId         String
   // Meta phone number id used when calling the Graph API.
@@ -138,45 +183,45 @@ model PhoneNumber {
   updatedAt      DateTime      @updatedAt
 
   workspace     Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  event         Event          @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  event         VdmsEvent      @relation(fields: [eventId], references: [id])
   conversations Conversation[]
   messages      Message[]
   campaigns     Campaign[]
 
   @@index([workspaceId])
+  @@schema("whatsapp")
 }
 
 // ---------------------------------------------------------------------------
 // Contacts
 // ---------------------------------------------------------------------------
 
-enum OptInStatus {
-  OPTED_IN
-  OPTED_OUT
-  UNKNOWN
-}
-
-// A person is one contact across all events; opt-in and history are tracked
-// per event through ContactOptIn and the conversations.
+// A person is one contact across all events. When their phone matches a VDMS
+// visitor we link it through visitorId; consent and profile then come from
+// VDMS rather than being duplicated here.
 model Contact {
   id          String   @id @default(cuid())
   workspaceId String
   // E.164 WhatsApp phone, e.g. 9665XXXXXXXX.
   waId        String
   name        String?
-  // Free-form key/value attributes imported from WATI or set by automations.
+  // Linked VDMS visitor (public.visitors.id), set when we match by phone.
+  visitorId   String?  @db.Uuid
+  // Free-form key/value attributes set by automations.
   attributes  Json     @default("{}")
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
   workspace     Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  visitor       VdmsVisitor?   @relation(fields: [visitorId], references: [id])
   tags          ContactTag[]
-  optIns        ContactOptIn[]
   conversations Conversation[]
   messages      Message[]
 
   @@unique([workspaceId, waId])
   @@index([workspaceId])
+  @@index([visitorId])
+  @@schema("whatsapp")
 }
 
 model Tag {
@@ -186,6 +231,7 @@ model Tag {
   contacts    ContactTag[]
 
   @@unique([workspaceId, name])
+  @@schema("whatsapp")
 }
 
 model ContactTag {
@@ -196,21 +242,7 @@ model ContactTag {
   tag     Tag     @relation(fields: [tagId], references: [id], onDelete: Cascade)
 
   @@id([contactId, tagId])
-}
-
-// Consent is per event, since a visitor may opt in to one event and not another.
-model ContactOptIn {
-  id        String      @id @default(cuid())
-  contactId String
-  eventId   String
-  status    OptInStatus @default(UNKNOWN)
-  // How consent was captured: "ctwa_ad", "registration", "import", "inbound".
-  source    String?
-  updatedAt DateTime    @updatedAt
-
-  contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
-
-  @@unique([contactId, eventId])
+  @@schema("whatsapp")
 }
 
 // ---------------------------------------------------------------------------
@@ -221,6 +253,8 @@ enum ConversationStatus {
   OPEN
   PENDING
   RESOLVED
+
+  @@schema("whatsapp")
 }
 
 model Conversation {
@@ -248,11 +282,14 @@ model Conversation {
   @@unique([contactId, phoneNumberId])
   @@index([workspaceId, status])
   @@index([assigneeId])
+  @@schema("whatsapp")
 }
 
 enum MessageDirection {
   INBOUND
   OUTBOUND
+
+  @@schema("whatsapp")
 }
 
 enum MessageStatus {
@@ -261,6 +298,8 @@ enum MessageStatus {
   DELIVERED
   READ
   FAILED
+
+  @@schema("whatsapp")
 }
 
 model Message {
@@ -292,6 +331,7 @@ model Message {
 
   @@index([conversationId, createdAt])
   @@index([workspaceId, createdAt])
+  @@schema("whatsapp")
 }
 
 model Note {
@@ -304,6 +344,7 @@ model Note {
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
 
   @@index([conversationId])
+  @@schema("whatsapp")
 }
 
 // ---------------------------------------------------------------------------
@@ -314,6 +355,8 @@ enum TemplateCategory {
   MARKETING
   UTILITY
   AUTHENTICATION
+
+  @@schema("whatsapp")
 }
 
 enum TemplateStatus {
@@ -323,12 +366,15 @@ enum TemplateStatus {
   REJECTED
   PAUSED
   DISABLED
+
+  @@schema("whatsapp")
 }
 
 model MessageTemplate {
   id          String           @id @default(cuid())
   workspaceId String
-  eventId     String?
+  // Optional owning VDMS event (public.events.id); null = shared across events.
+  eventId     String?          @db.Uuid
   name        String
   language    String
   category    TemplateCategory
@@ -341,11 +387,12 @@ model MessageTemplate {
   updatedAt   DateTime         @updatedAt
 
   workspace Workspace  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  event     Event?     @relation(fields: [eventId], references: [id])
+  event     VdmsEvent? @relation(fields: [eventId], references: [id])
   campaigns Campaign[]
 
   @@unique([workspaceId, name, language])
   @@index([workspaceId])
+  @@schema("whatsapp")
 }
 
 enum CampaignStatus {
@@ -354,12 +401,15 @@ enum CampaignStatus {
   SENDING
   COMPLETED
   CANCELLED
+
+  @@schema("whatsapp")
 }
 
 model Campaign {
   id            String         @id @default(cuid())
   workspaceId   String
-  eventId       String
+  // VDMS event (public.events.id) this campaign sends for.
+  eventId       String         @db.Uuid
   phoneNumberId String
   templateId    String
   name          String
@@ -371,12 +421,13 @@ model Campaign {
   updatedAt     DateTime       @updatedAt
 
   workspace   Workspace           @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  event       Event               @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  event       VdmsEvent           @relation(fields: [eventId], references: [id])
   phoneNumber PhoneNumber         @relation(fields: [phoneNumberId], references: [id])
   template    MessageTemplate     @relation(fields: [templateId], references: [id])
   recipients  CampaignRecipient[]
 
   @@index([workspaceId, status])
+  @@schema("whatsapp")
 }
 
 model CampaignRecipient {
@@ -394,6 +445,7 @@ model CampaignRecipient {
 
   @@unique([campaignId, contactId])
   @@index([campaignId, status])
+  @@schema("whatsapp")
 }
 
 // ---------------------------------------------------------------------------
@@ -403,7 +455,8 @@ model CampaignRecipient {
 model Automation {
   id          String   @id @default(cuid())
   workspaceId String
-  eventId     String?
+  // Optional VDMS event scope (public.events.id).
+  eventId     String?  @db.Uuid
   name        String
   enabled     Boolean  @default(true)
   // "welcome" | "out_of_office" | "keyword" | "assignment"
@@ -418,12 +471,14 @@ model Automation {
   workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
   @@index([workspaceId])
+  @@schema("whatsapp")
 }
 
 model BotFlow {
   id          String   @id @default(cuid())
   workspaceId String
-  eventId     String?
+  // Optional VDMS event scope (public.events.id).
+  eventId     String?  @db.Uuid
   name        String
   enabled     Boolean  @default(false)
   // Node graph defining the conversation flow.
@@ -435,6 +490,7 @@ model BotFlow {
   sessions  BotSession[]
 
   @@index([workspaceId])
+  @@schema("whatsapp")
 }
 
 model BotSession {
@@ -451,6 +507,7 @@ model BotSession {
   botFlow BotFlow @relation(fields: [botFlowId], references: [id], onDelete: Cascade)
 
   @@index([botFlowId])
+  @@schema("whatsapp")
 }
 
 // ---------------------------------------------------------------------------
@@ -468,4 +525,5 @@ model WebhookEvent {
   workspace Workspace? @relation(fields: [workspaceId], references: [id])
 
   @@index([receivedAt])
+  @@schema("whatsapp")
 }

@@ -19,6 +19,16 @@ function formatTime(iso: string | null): string {
   });
 }
 
+function ConsentPill({ consent }: { consent: string }) {
+  const color =
+    consent === "Opted-in"
+      ? "bg-green-100 text-green-700"
+      : consent === "Opted-out"
+        ? "bg-red-100 text-red-700"
+        : "bg-amber-100 text-amber-700";
+  return <span className={`rounded px-1.5 py-0.5 ${color}`}>{consent}</span>;
+}
+
 export default function InboxPage() {
   const [events, setEvents] = useState<EventSummary[]>([]);
   const [eventId, setEventId] = useState<string | undefined>(undefined);
@@ -103,6 +113,15 @@ export default function InboxPage() {
                   <span className="truncate text-sm text-gray-500">
                     {c.lastMessage?.text ?? `[${c.lastMessage?.type ?? "no messages"}]`}
                   </span>
+                  {c.contact.visitor && (
+                    <span className="mt-1 flex items-center gap-1 text-xs text-gray-400">
+                      <span className="rounded bg-gray-100 px-1.5 py-0.5">VDMS</span>
+                      <span className="truncate">
+                        {c.contact.visitor.company || c.contact.visitor.name}
+                      </span>
+                      <ConsentPill consent={c.contact.visitor.consent} />
+                    </span>
+                  )}
                 </button>
               </li>
             ))}
@@ -118,6 +137,18 @@ export default function InboxPage() {
                   {active.contact.name ?? active.contact.waId}
                 </p>
                 <p className="text-xs text-gray-500">{active.contact.waId}</p>
+                {active.contact.visitor && (
+                  <p className="mt-1 flex items-center gap-2 text-xs text-gray-500">
+                    <span className="rounded bg-gray-100 px-1.5 py-0.5">VDMS visitor</span>
+                    <span>
+                      {active.contact.visitor.name}
+                      {active.contact.visitor.company
+                        ? ` · ${active.contact.visitor.company}`
+                        : ""}
+                    </span>
+                    <ConsentPill consent={active.contact.visitor.consent} />
+                  </p>
+                )}
               </div>
               <div className="flex-1 space-y-2 overflow-y-auto p-4">
                 {messages.map((m) => (
