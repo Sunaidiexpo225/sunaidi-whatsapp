@@ -4,6 +4,7 @@ import { validateEnv } from "./config/env";
 import { PrismaModule } from "./db/prisma.module";
 import { QueueModule } from "./queue/queue.module";
 import { HealthController } from "./health/health.controller";
+import { InboxModule } from "./inbox/inbox.module";
 import { WhatsappModule } from "./whatsapp/whatsapp.module";
 
 @Module({
@@ -15,6 +16,7 @@ import { WhatsappModule } from "./whatsapp/whatsapp.module";
     PrismaModule,
     QueueModule,
     WhatsappModule,
+    InboxModule,
   ],
   controllers: [HealthController],
 })
