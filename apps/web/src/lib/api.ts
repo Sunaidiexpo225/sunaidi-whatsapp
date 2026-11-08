@@ -27,6 +27,35 @@ export interface ConversationSummary {
   } | null;
 }
 
+export interface DashboardSummary {
+  conversations: { total: number; open: number; pending: number; resolved: number };
+  messages7d: {
+    outbound: number;
+    sent: number;
+    delivered: number;
+    read: number;
+    failed: number;
+    inbound: number;
+  };
+  campaigns: {
+    total: number;
+    sending: number;
+    completed: number;
+    recipientsSent: number;
+    recipientsFailed: number;
+    recipientsQueued: number;
+  };
+  contacts: number;
+  events: {
+    phoneNumberId: string;
+    name: string;
+    phone: string;
+    displayName: string | null;
+    openConversations: number;
+    sent7d: number;
+  }[];
+}
+
 export interface MessageView {
   id: string;
   direction: "INBOUND" | "OUTBOUND";
@@ -60,6 +89,7 @@ async function post<T>(path: string, body: unknown): Promise<T> {
 }
 
 export const api = {
+  getDashboard: () => get<DashboardSummary>("/dashboard"),
   listEvents: () => get<EventSummary[]>("/events"),
   listConversations: (eventId?: string) =>
     get<ConversationSummary[]>(

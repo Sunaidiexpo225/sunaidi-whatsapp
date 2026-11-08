@@ -7,6 +7,7 @@ import {
   type EventSummary,
   type MessageView,
 } from "@/lib/api";
+import { NavLinks } from "@/components/nav-links";
 
 function formatTime(iso: string | null): string {
   if (!iso) return "";
@@ -89,6 +90,7 @@ export default function InboxPage() {
     <div className="flex h-screen flex-col">
       <header className="flex items-center gap-4 border-b bg-brand px-4 py-3 text-white">
         <h1 className="text-lg font-semibold">Sunaidi WhatsApp</h1>
+        <NavLinks />
         <select
           className="rounded bg-brand-dark px-2 py-1 text-sm"
           value={eventId ?? ""}

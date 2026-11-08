@@ -7,6 +7,7 @@ import { HealthController } from "./health/health.controller";
 import { CampaignModule } from "./campaign/campaign.module";
 import { InboxModule } from "./inbox/inbox.module";
 import { OutboundModule } from "./outbound/outbound.module";
+import { StatsModule } from "./stats/stats.module";
 import { WhatsappModule } from "./whatsapp/whatsapp.module";
 
 @Module({
@@ -21,6 +22,7 @@ import { WhatsappModule } from "./whatsapp/whatsapp.module";
     InboxModule,
     OutboundModule,
     CampaignModule,
+    StatsModule,
   ],
   controllers: [HealthController],
 })
