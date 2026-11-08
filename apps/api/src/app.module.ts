@@ -11,6 +11,7 @@ import { InboxModule } from "./inbox/inbox.module";
 import { NumbersModule } from "./numbers/numbers.module";
 import { OutboundModule } from "./outbound/outbound.module";
 import { StatsModule } from "./stats/stats.module";
+import { TagsModule } from "./tags/tags.module";
 import { TemplatesModule } from "./templates/templates.module";
 import { WhatsappModule } from "./whatsapp/whatsapp.module";
 
@@ -28,6 +29,7 @@ import { WhatsappModule } from "./whatsapp/whatsapp.module";
     CampaignModule,
     StatsModule,
     TemplatesModule,
+    TagsModule,
     ContactsModule,
     AutomationsModule,
     NumbersModule,
