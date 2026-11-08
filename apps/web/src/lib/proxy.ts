@@ -17,16 +17,16 @@ function authed(req: NextRequest): boolean {
 export async function forward(
   req: NextRequest,
   path: string,
-  method: "POST" | "PATCH",
+  method: "POST" | "PATCH" | "DELETE",
 ): Promise<NextResponse> {
   if (!authed(req)) {
     return NextResponse.json({ message: "Not authenticated" }, { status: 401 });
   }
-  const body = await req.text();
+  const body = method === "DELETE" ? "" : await req.text();
   const res = await fetch(`${SERVER_API_URL}${path}`, {
     method,
     headers: { "Content-Type": "application/json", "x-api-key": INTERNAL_API_KEY },
-    body: body || "{}",
+    ...(method === "DELETE" ? {} : { body: body || "{}" }),
     cache: "no-store",
   });
   const text = await res.text();

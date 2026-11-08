@@ -88,12 +88,30 @@ export interface TemplateRow {
   updatedAt: string;
 }
 
+export interface TagRef {
+  id: string;
+  name: string;
+}
+
+export interface TagRow extends TagRef {
+  contactCount: number;
+}
+
 export interface ContactRow {
   id: string;
   waId: string;
   name: string | null;
   createdAt: string;
+  tags: TagRef[];
   visitor: { name: string; company: string; consent: string; country: string } | null;
+}
+
+export type ConsentFilter = "OPTED_IN" | "PENDING" | "OPTED_OUT";
+
+export interface ContactFilter {
+  search?: string;
+  tagId?: string;
+  consent?: ConsentFilter;
 }
 
 export interface AutomationRow {
@@ -142,11 +160,15 @@ async function post<T>(path: string, body: unknown): Promise<T> {
 
 // Writes that need the internal API key go through same-origin Next route
 // handlers (/api/*), which attach the key server-side.
-async function local<T>(path: string, method: "POST" | "PATCH", body: unknown): Promise<T> {
+async function local<T>(
+  path: string,
+  method: "POST" | "PATCH" | "DELETE",
+  body?: unknown,
+): Promise<T> {
   const res = await fetch(path, {
     method,
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
+    ...(method === "DELETE" ? {} : { body: JSON.stringify(body ?? {}) }),
   });
   if (!res.ok) {
     const detail = await res.json().catch(() => null);
@@ -197,8 +219,28 @@ export const api = {
     components?: unknown[];
   }) => local<{ id: string; status: string }>("/api/templates", "POST", input),
 
-  listContacts: (search?: string) =>
-    get<ContactRow[]>(search ? `/contacts?search=${encodeURIComponent(search)}` : "/contacts"),
+  listContacts: (filter: ContactFilter = {}) => {
+    const qs = new URLSearchParams();
+    if (filter.search) qs.set("search", filter.search);
+    if (filter.tagId) qs.set("tagId", filter.tagId);
+    if (filter.consent) qs.set("consent", filter.consent);
+    const q = qs.toString();
+    return get<ContactRow[]>(q ? `/contacts?${q}` : "/contacts");
+  },
+
+  listTags: () => get<TagRow[]>("/tags"),
+  createTag: (input: { name: string; eventId?: string }) =>
+    local<TagRow>("/api/tags", "POST", input),
+  addContactTag: (contactId: string, tagId: string) =>
+    local<{ ok: true }>(`/api/contacts/${contactId}/tags`, "POST", { tagId }),
+  removeContactTag: (contactId: string, tagId: string) =>
+    local<{ ok: true }>(`/api/contacts/${contactId}/tags/${tagId}`, "DELETE"),
+  importContacts: (input: { contacts: { to: string; name?: string }[]; eventId?: string }) =>
+    local<{ created: number; updated: number; skipped: number }>(
+      "/api/contacts/import",
+      "POST",
+      input,
+    ),
 
   listAutomations: () => get<AutomationRow[]>("/automations"),
   createAutomation: (input: { eventId?: string; name: string; trigger: string }) =>
