@@ -416,7 +416,11 @@ model Campaign {
   // VDMS event (public.events.id) this campaign sends for.
   eventId       String         @db.Uuid
   phoneNumberId String
-  templateId    String
+  // Optional link to a managed template record (template management lands
+  // later); the approved template is identified by name + language for now.
+  templateId       String?
+  templateName     String
+  templateLanguage String
   name          String
   status        CampaignStatus @default(DRAFT)
   scheduledAt   DateTime?
@@ -428,7 +432,7 @@ model Campaign {
   workspace   Workspace           @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   event       VdmsEvent           @relation(fields: [eventId], references: [id])
   phoneNumber PhoneNumber         @relation(fields: [phoneNumberId], references: [id])
-  template    MessageTemplate     @relation(fields: [templateId], references: [id])
+  template    MessageTemplate?    @relation(fields: [templateId], references: [id])
   recipients  CampaignRecipient[]
 
   @@index([workspaceId, status])
