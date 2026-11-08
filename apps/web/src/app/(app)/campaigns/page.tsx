@@ -1,7 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { api, type CampaignRow, type EventSummary } from "@/lib/api";
+import {
+  api,
+  type CampaignRow,
+  type ConsentFilter,
+  type EventSummary,
+  type TagRow,
+} from "@/lib/api";
 import { PageShell } from "@/components/page-shell";
 
 function StatusPill({ status }: { status: string }) {
@@ -10,25 +16,39 @@ function StatusPill({ status }: { status: string }) {
       ? "bg-green-100 text-green-700"
       : status === "SENDING"
         ? "bg-blue-100 text-blue-700"
-        : status === "CANCELLED"
-          ? "bg-red-100 text-red-700"
-          : "bg-gray-100 text-gray-600";
+        : status === "SCHEDULED"
+          ? "bg-indigo-100 text-indigo-700"
+          : status === "CANCELLED"
+            ? "bg-red-100 text-red-700"
+            : "bg-gray-100 text-gray-600";
   return <span className={`rounded px-2 py-0.5 text-xs ${color}`}>{status}</span>;
 }
+
+type Mode = "list" | "audience";
 
 export default function CampaignsPage() {
   const [rows, setRows] = useState<CampaignRow[]>([]);
   const [events, setEvents] = useState<EventSummary[]>([]);
+  const [tags, setTags] = useState<TagRow[]>([]);
   const [error, setError] = useState<string | undefined>(undefined);
   const [showForm, setShowForm] = useState(false);
 
-  // form state
+  // shared form state
+  const [mode, setMode] = useState<Mode>("list");
   const [eventId, setEventId] = useState("");
   const [name, setName] = useState("");
   const [templateName, setTemplateName] = useState("");
   const [language, setLanguage] = useState("en");
-  const [recipients, setRecipients] = useState("");
+  const [scheduledAt, setScheduledAt] = useState("");
   const [busy, setBusy] = useState(false);
+
+  // list-mode state
+  const [recipients, setRecipients] = useState("");
+
+  // audience-mode state
+  const [consent, setConsent] = useState<"" | ConsentFilter>("OPTED_IN");
+  const [tagId, setTagId] = useState("");
+  const [audienceCount, setAudienceCount] = useState<number | null>(null);
 
   const load = useCallback(() => {
     api.listCampaigns().then(setRows).catch((e) => setError(String(e)));
@@ -37,33 +57,78 @@ export default function CampaignsPage() {
   useEffect(() => {
     load();
     api.listEvents().then(setEvents).catch(() => {});
+    api.listTags().then(setTags).catch(() => {});
   }, [load]);
+
+  // Live audience count preview.
+  useEffect(() => {
+    if (mode !== "audience" || !eventId) {
+      setAudienceCount(null);
+      return;
+    }
+    let cancelled = false;
+    const t = setTimeout(() => {
+      api
+        .previewAudience({ eventId, consent: consent || undefined, tagId: tagId || undefined })
+        .then((r) => !cancelled && setAudienceCount(r.count))
+        .catch(() => !cancelled && setAudienceCount(null));
+    }, 250);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
+  }, [mode, eventId, consent, tagId]);
+
+  function isoOrUndefined(local: string): string | undefined {
+    if (!local) return undefined;
+    const d = new Date(local);
+    return isNaN(d.getTime()) ? undefined : d.toISOString();
+  }
 
   async function create(e: React.FormEvent) {
     e.preventDefault();
-    const list = recipients
-      .split(/[\n,]/)
-      .map((s) => s.trim())
-      .filter(Boolean)
-      .map((to) => ({ to }));
-    if (!eventId || !name || !templateName || list.length === 0) {
-      setError("Event, name, template and at least one recipient are required");
+    if (!eventId || !name || !templateName) {
+      setError("Event, name and template are required");
       return;
     }
     setBusy(true);
     setError(undefined);
     try {
-      await api.createCampaign({
-        eventId,
-        name,
-        templateName,
-        templateLanguage: language,
-        recipients: list,
-      });
+      if (mode === "audience") {
+        await api.createCampaignFromAudience({
+          eventId,
+          name,
+          templateName,
+          templateLanguage: language,
+          consent: consent || undefined,
+          tagId: tagId || undefined,
+          scheduledAt: isoOrUndefined(scheduledAt),
+        });
+      } else {
+        const list = recipients
+          .split(/[\n,]/)
+          .map((s) => s.trim())
+          .filter(Boolean)
+          .map((to) => ({ to }));
+        if (list.length === 0) {
+          setError("Add at least one recipient");
+          setBusy(false);
+          return;
+        }
+        await api.createCampaign({
+          eventId,
+          name,
+          templateName,
+          templateLanguage: language,
+          recipients: list,
+          scheduledAt: isoOrUndefined(scheduledAt),
+        });
+      }
       setShowForm(false);
       setName("");
       setTemplateName("");
       setRecipients("");
+      setScheduledAt("");
       load();
     } catch (err) {
       setError(String(err instanceof Error ? err.message : err));
@@ -98,6 +163,23 @@ export default function CampaignsPage() {
 
       {showForm && (
         <form onSubmit={create} className="mb-6 space-y-3 rounded-lg border bg-white p-4 shadow-sm">
+          <div className="inline-flex rounded border p-0.5 text-sm">
+            <button
+              type="button"
+              onClick={() => setMode("list")}
+              className={`rounded px-3 py-1 ${mode === "list" ? "bg-brand text-white" : "text-gray-600"}`}
+            >
+              Paste list
+            </button>
+            <button
+              type="button"
+              onClick={() => setMode("audience")}
+              className={`rounded px-3 py-1 ${mode === "audience" ? "bg-brand text-white" : "text-gray-600"}`}
+            >
+              Audience
+            </button>
+          </div>
+
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="text-sm">
               <span className="mb-1 block text-gray-600">Event</span>
@@ -139,15 +221,72 @@ export default function CampaignsPage() {
               />
             </label>
           </div>
+
+          {mode === "list" ? (
+            <label className="block text-sm">
+              <span className="mb-1 block text-gray-600">Recipients (one phone per line, E.164)</span>
+              <textarea
+                className="h-24 w-full rounded border px-2 py-1.5 font-mono text-xs"
+                placeholder="966500000001&#10;966500000002"
+                value={recipients}
+                onChange={(e) => setRecipients(e.target.value)}
+              />
+            </label>
+          ) : (
+            <div className="space-y-2">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="text-sm">
+                  <span className="mb-1 block text-gray-600">Consent</span>
+                  <select
+                    className="w-full rounded border px-2 py-1.5"
+                    value={consent}
+                    onChange={(e) => setConsent(e.target.value as "" | ConsentFilter)}
+                  >
+                    <option value="">Any consent</option>
+                    <option value="OPTED_IN">Opted-in only</option>
+                    <option value="PENDING">Pending</option>
+                    <option value="OPTED_OUT">Opted-out</option>
+                  </select>
+                </label>
+                <label className="text-sm">
+                  <span className="mb-1 block text-gray-600">Tag</span>
+                  <select
+                    className="w-full rounded border px-2 py-1.5"
+                    value={tagId}
+                    onChange={(e) => setTagId(e.target.value)}
+                  >
+                    <option value="">All contacts</option>
+                    {tags.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              <p className="text-sm text-gray-600">
+                {eventId
+                  ? audienceCount === null
+                    ? "Estimating reach…"
+                    : `Reaches ${audienceCount} contact${audienceCount === 1 ? "" : "s"}.`
+                  : "Select an event to estimate reach."}
+              </p>
+            </div>
+          )}
+
           <label className="block text-sm">
-            <span className="mb-1 block text-gray-600">Recipients (one phone per line, E.164)</span>
-            <textarea
-              className="h-24 w-full rounded border px-2 py-1.5 font-mono text-xs"
-              placeholder="966500000001&#10;966500000002"
-              value={recipients}
-              onChange={(e) => setRecipients(e.target.value)}
+            <span className="mb-1 block text-gray-600">Schedule for (optional)</span>
+            <input
+              type="datetime-local"
+              className="rounded border px-2 py-1.5"
+              value={scheduledAt}
+              onChange={(e) => setScheduledAt(e.target.value)}
             />
+            <span className="ml-2 text-xs text-gray-400">
+              Leave empty to send as soon as you press Start.
+            </span>
           </label>
+
           <button
             type="submit"
             disabled={busy}
