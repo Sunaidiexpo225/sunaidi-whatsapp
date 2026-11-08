@@ -42,6 +42,27 @@ export class WhatsAppClient {
     return { messageId, waContactId };
   }
 
+  /**
+   * Create (submit for approval) a message template on a WABA.
+   * POST /{whatsapp-business-account-id}/message_templates. Returns Meta's
+   * template id plus the review status/category Meta assigns.
+   */
+  async createMessageTemplate(
+    wabaId: string,
+    def: {
+      name: string;
+      language: string;
+      category: string;
+      components: unknown[];
+    },
+  ): Promise<{ id: string; status: string; category: string }> {
+    const json = await this.post<CreateTemplateResponse>(`/${wabaId}/message_templates`, def);
+    if (!json.id) {
+      throw new WhatsAppApiError("Unexpected create-template response", 200, undefined, json);
+    }
+    return { id: json.id, status: json.status ?? "PENDING", category: json.category ?? def.category };
+  }
+
   private toGraphBody(message: OutboundMessage): Record<string, unknown> {
     const base = { messaging_product: "whatsapp", to: message.to };
     switch (message.type) {
@@ -91,6 +112,12 @@ export class WhatsAppClient {
 interface GraphSendResponse {
   messages?: { id: string }[];
   contacts?: { wa_id: string }[];
+}
+
+interface CreateTemplateResponse {
+  id?: string;
+  status?: string;
+  category?: string;
 }
 
 interface GraphErrorResponse {
