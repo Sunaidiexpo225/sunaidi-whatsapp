@@ -5,6 +5,7 @@ import IORedis from "ioredis";
 import type { Env } from "../config/env";
 import {
   INBOUND_WEBHOOK_QUEUE,
+  OUTBOUND_MESSAGE_QUEUE,
   QUEUE_NAMES,
   REDIS_CONNECTION,
 } from "./queue.constants";
@@ -26,7 +27,13 @@ import {
       useFactory: (connection: IORedis) =>
         new Queue(QUEUE_NAMES.INBOUND_WEBHOOK, { connection }),
     },
+    {
+      provide: OUTBOUND_MESSAGE_QUEUE,
+      inject: [REDIS_CONNECTION],
+      useFactory: (connection: IORedis) =>
+        new Queue(QUEUE_NAMES.OUTBOUND_MESSAGE, { connection }),
+    },
   ],
-  exports: [REDIS_CONNECTION, INBOUND_WEBHOOK_QUEUE],
+  exports: [REDIS_CONNECTION, INBOUND_WEBHOOK_QUEUE, OUTBOUND_MESSAGE_QUEUE],
 })
 export class QueueModule {}
