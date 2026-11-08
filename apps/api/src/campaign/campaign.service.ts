@@ -31,12 +31,76 @@ export interface StartCampaignResult {
   queued: number;
 }
 
+export interface CampaignRow {
+  id: string;
+  name: string;
+  status: string;
+  templateName: string;
+  templateLanguage: string;
+  eventName: string;
+  recipients: { total: number; sent: number; failed: number; queued: number };
+  createdAt: Date;
+  startedAt: Date | null;
+  completedAt: Date | null;
+}
+
 @Injectable()
 export class CampaignService {
   constructor(
     @Inject(PRISMA) private readonly prisma: PrismaClient,
     @Inject(CAMPAIGN_SEND_QUEUE) private readonly queue: Queue<CampaignSendJob>,
   ) {}
+
+  /** List recent campaigns with per-status recipient counts. */
+  async list(): Promise<CampaignRow[]> {
+    const [campaigns, stats] = await Promise.all([
+      this.prisma.campaign.findMany({
+        orderBy: { createdAt: "desc" },
+        take: 100,
+        select: {
+          id: true,
+          name: true,
+          status: true,
+          templateName: true,
+          templateLanguage: true,
+          createdAt: true,
+          startedAt: true,
+          completedAt: true,
+          event: { select: { name: true } },
+          _count: { select: { recipients: true } },
+        },
+      }),
+      this.prisma.campaignRecipient.groupBy({
+        by: ["campaignId", "status"],
+        _count: { _all: true },
+      }),
+    ]);
+
+    const byCampaign = new Map<string, { sent: number; failed: number; queued: number }>();
+    for (const s of stats) {
+      const row = byCampaign.get(s.campaignId) ?? { sent: 0, failed: 0, queued: 0 };
+      if (s.status === "FAILED") row.failed += s._count._all;
+      else if (s.status === "QUEUED") row.queued += s._count._all;
+      else row.sent += s._count._all; // SENT / DELIVERED / READ
+      byCampaign.set(s.campaignId, row);
+    }
+
+    return campaigns.map((c) => {
+      const r = byCampaign.get(c.id) ?? { sent: 0, failed: 0, queued: 0 };
+      return {
+        id: c.id,
+        name: c.name,
+        status: c.status,
+        templateName: c.templateName,
+        templateLanguage: c.templateLanguage,
+        eventName: c.event?.name ?? "—",
+        recipients: { total: c._count.recipients, ...r },
+        createdAt: c.createdAt,
+        startedAt: c.startedAt,
+        completedAt: c.completedAt,
+      };
+    });
+  }
 
   /** Create a draft campaign and its recipient list. Does not send until
    * started. Recipients are de-duplicated by phone. */

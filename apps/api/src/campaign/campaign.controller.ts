@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Get,
   Param,
   Post,
   UseGuards,
@@ -10,6 +11,7 @@ import { z } from "zod";
 import { ApiKeyGuard } from "../outbound/api-key.guard";
 import {
   CampaignService,
+  type CampaignRow,
   type CreateCampaignResult,
   type StartCampaignResult,
 } from "./campaign.service";
@@ -29,12 +31,16 @@ const createSchema = z.object({
     .min(1),
 });
 
-/** Internal campaign API (dashboard/VDMS). Guarded by the shared API key. */
-@UseGuards(ApiKeyGuard)
 @Controller("campaigns")
 export class CampaignController {
   constructor(private readonly campaigns: CampaignService) {}
 
+  @Get()
+  list(): Promise<CampaignRow[]> {
+    return this.campaigns.list();
+  }
+
+  @UseGuards(ApiKeyGuard)
   @Post()
   create(@Body() body: unknown): Promise<CreateCampaignResult> {
     const parsed = createSchema.safeParse(body);
@@ -47,6 +53,7 @@ export class CampaignController {
     return this.campaigns.create(parsed.data);
   }
 
+  @UseGuards(ApiKeyGuard)
   @Post(":id/start")
   start(@Param("id") id: string): Promise<StartCampaignResult> {
     return this.campaigns.start(id);
