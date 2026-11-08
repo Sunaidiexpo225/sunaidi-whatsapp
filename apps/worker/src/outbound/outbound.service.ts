@@ -91,5 +91,19 @@ export function toOutbound(
       return { type: "text", to, text: { body: text } };
     }
   }
+  if (type === "template" && content && typeof content === "object") {
+    const c = content as { name?: unknown; language?: unknown; components?: unknown };
+    if (typeof c.name === "string" && c.name.length > 0 && typeof c.language === "string") {
+      return {
+        type: "template",
+        to,
+        template: {
+          name: c.name,
+          language: { code: c.language },
+          components: Array.isArray(c.components) ? c.components : undefined,
+        },
+      };
+    }
+  }
   return null;
 }

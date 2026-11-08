@@ -68,3 +68,63 @@ describe("OutboundService.sendText", () => {
     await assert.rejects(() => service.sendText("conv1", "   "), /required/);
   });
 });
+
+function templateServiceWith(phone: unknown): { service: OutboundService; fakes: Fakes } {
+  const fakes: Fakes = { created: [], enqueued: [] };
+  const prisma = {
+    phoneNumber: { findUnique: async () => phone },
+    contact: { upsert: async () => ({ id: "c1" }) },
+    conversation: { upsert: async () => ({ id: "conv1" }) },
+    message: {
+      create: async ({ data }: { data: unknown }) => {
+        fakes.created.push(data);
+        return { id: "m2", status: "QUEUED" };
+      },
+    },
+  } as unknown as PrismaClient;
+
+  const queue = {
+    add: async (_name: string, job: unknown) => {
+      fakes.enqueued.push(job);
+    },
+  } as unknown as Queue;
+
+  return { service: new OutboundService(prisma, queue), fakes };
+}
+
+describe("OutboundService.sendTemplate", () => {
+  it("queues a template send for a configured event (no window check)", async () => {
+    const { service, fakes } = templateServiceWith({ id: "p1", workspaceId: "ws1" });
+    const result = await service.sendTemplate({
+      eventId: "11111111-1111-1111-1111-111111111111",
+      to: "966500000000",
+      name: "visitor_badge",
+      language: "en",
+      components: [{ type: "header" }],
+    });
+    assert.equal(result.id, "m2");
+    assert.equal(fakes.enqueued.length, 1);
+    const data = fakes.created[0] as { type: string; content: unknown };
+    assert.equal(data.type, "template");
+    assert.deepEqual(data.content, {
+      name: "visitor_badge",
+      language: "en",
+      components: [{ type: "header" }],
+    });
+  });
+
+  it("rejects when the event has no WhatsApp number", async () => {
+    const { service, fakes } = templateServiceWith(null);
+    await assert.rejects(
+      () =>
+        service.sendTemplate({
+          eventId: "11111111-1111-1111-1111-111111111111",
+          to: "966500000000",
+          name: "visitor_badge",
+          language: "en",
+        }),
+      /No WhatsApp number/,
+    );
+    assert.equal(fakes.enqueued.length, 0);
+  });
+});

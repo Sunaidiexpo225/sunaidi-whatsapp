@@ -13,6 +13,10 @@ export const envSchema = z.object({
   WHATSAPP_ACCESS_TOKEN: z.string().min(1),
   WHATSAPP_WEBHOOK_VERIFY_TOKEN: z.string().min(1),
   WHATSAPP_APP_SECRET: z.string().min(1),
+
+  // Shared secret VDMS (and other internal callers) present on x-api-key when
+  // asking us to send templates/badges.
+  INTERNAL_API_KEY: z.string().min(1),
 });
 
 export type Env = z.infer<typeof envSchema>;
